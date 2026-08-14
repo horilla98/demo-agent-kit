@@ -5,7 +5,7 @@ name: PR signals
 # single, updated bot comment (never accumulates new ones).
 #
 # Job/step names are English in both installation languages (GitHub Actions UI);
-# the comment the bot writes follows `--nyelv`, see .github/scripts/uzenetek.mjs.
+# the comment the bot writes follows `--nyelv`, see .github/scripts/messages.mjs.
 
 on:
   pull_request:
@@ -26,7 +26,7 @@ permissions:
   issues: write
 
 jobs:
-  lanc-nyom:
+  chain-trace:
     name: Chain trace
     # issue_comment fires on non-PR issues too — run only for PR comments.
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
@@ -41,4 +41,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER_INPUT: ${{ github.event.inputs.pr }}
-        run: node .github/scripts/lanc-nyom.mjs
+        run: node .github/scripts/chain-trace.mjs
