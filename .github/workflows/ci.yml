@@ -1,0 +1,91 @@
+name: CI
+
+# Fail-closed: a step that cannot run is RED, never "skipped, therefore green".
+# The `kapu` job is the aggregated status — wire THAT into branch protection.
+#
+# The job/step names below are English in both installation languages: they are
+# read in the GitHub Actions UI, which is English-only. The prose files
+# (charters, commands, docs) follow `--nyelv`; CI labels do not.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  agent-kit-scriptek:
+    name: Agent-kit scripts (self-test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Workflow script tests
+        run: node --test .github/scripts/__tests__/*.test.mjs
+
+  projekt-teszt:
+    name: Project tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The test command comes from agent-kit.config.json — one source, not a
+      # value duplicated into the workflow.
+      - name: Resolve test command
+        id: parancs
+        run: |
+          TESZT=$(node -e "const c=require('./agent-kit.config.json');process.stdout.write(c.teszt||'')")
+          echo "teszt=$TESZT" >> "$GITHUB_OUTPUT"
+          echo "Test command: $TESZT"
+
+      # In the first days after install there is nothing to run yet — that is
+      # NOT an error, but it must be visible. Once a test command exists, its
+      # failure is red.
+      - name: Run project tests
+        env:
+          # The `teszt` value comes from agent-kit.config.json, which any
+          # contributor in the target project can edit. There is DELIBERATELY
+          # no `eval` here and no quoted "$TESZT" on the run line: eval would
+          # re-interpret shell operators (`;`, `&&`, `|`, redirection) — a case
+          # actually measured in the kit's source project (not in the target
+          # project): under eval, `echo hi; touch PWNED` really does execute
+          # the injected command, whereas with unquoted $TESZT it stays a
+          # literal argument. Unquoted $TESZT splits on word boundaries
+          # (multi-word commands such as `npm test -- --foo` work) but does not
+          # re-interpret metacharacters. If a project genuinely needs a command
+          # chain, put it in a package.json/Makefile script and have the
+          # `teszt` field call only THAT (e.g. `npm run test:ci`) — do NOT
+          # bring eval back here.
+          TESZT: ${{ steps.parancs.outputs.teszt }}
+        run: |
+          if [ -z "$TESZT" ]; then
+            echo "::warning::No test command in agent-kit.config.json — project tests skipped."
+            exit 0
+          fi
+          if [ -f package.json ]; then npm ci --no-audit --no-fund || npm install --no-audit --no-fund; fi
+          $TESZT
+
+  kapu:
+    name: CI (aggregated gate)
+    runs-on: ubuntu-latest
+    needs: [agent-kit-scriptek, projekt-teszt]
+    if: always()
+    steps:
+      - name: Gate status
+        run: |
+          echo "agent-kit-scriptek: ${{ needs.agent-kit-scriptek.result }}"
+          echo "projekt-teszt:      ${{ needs.projekt-teszt.result }}"
+          if [ "${{ needs.agent-kit-scriptek.result }}" != "success" ] || \
+             [ "${{ needs.projekt-teszt.result }}" != "success" ]; then
+            echo "::error::The gate is red — at least one upstream job failed."
+            exit 1
+          fi
+          echo "The gate is green."

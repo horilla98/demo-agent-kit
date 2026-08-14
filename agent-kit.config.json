@@ -1,0 +1,6 @@
+{
+  "projekt": "Demo Projekt",
+  "repo": "horilla98/demo-agent-kit",
+  "nyelv": "magyar",
+  "teszt": "npm test"
+}

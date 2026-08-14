@@ -1,0 +1,44 @@
+name: PR signals
+
+# Chain-trace signal: makes the agent traces expected at this size visible on the
+# PR. A SIGNAL, NOT A BLOCKING GATE — human approval decides the merge. Leaves a
+# single, updated bot comment (never accumulates new ones).
+#
+# Job/step names are English in both installation languages (GitHub Actions UI);
+# the comment the bot writes follows `--nyelv`, see .github/scripts/uzenetek.mjs.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, ready_for_review, reopened]
+  issue_comment:
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, edited]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number (for manual runs)'
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  lanc-nyom:
+    name: Chain trace
+    # issue_comment fires on non-PR issues too — run only for PR comments.
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Chain-trace signal
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER_INPUT: ${{ github.event.inputs.pr }}
+        run: node .github/scripts/lanc-nyom.mjs
