@@ -1,23 +1,23 @@
-// Közös, függőség-mentes GitHub REST kliens a workflow-scriptekhez.
-// Env: GITHUB_TOKEN (vagy GH_TOKEN), GITHUB_REPOSITORY (tulaj/repo).
+// Shared, dependency-free GitHub REST client for the workflow scripts.
+// Env: GITHUB_TOKEN (or GH_TOKEN), GITHUB_REPOSITORY (owner/repo).
 //
-// A modul betöltése SOSEM lép ki a folyamatból hiányzó token miatt — a hívó
-// dönti el, mit tesz (a session-hookok némán továbbmennek, a workflow-k
-// hangosan buknak). Az `ensureAuth()` az a pont, ahol a hiány hibává válik.
+// Loading this module NEVER exits the process for a missing token — the
+// caller decides what to do (session hooks silently move on, workflows fail
+// loudly). `ensureAuth()` is the point where the gap becomes an error.
 
-import { uzenetek } from './uzenetek.mjs'
-import { projektConfig } from './projekt-config.mjs'
+import { messages } from './messages.mjs'
+import { projectConfig } from './project-config.mjs'
 
 const TOKEN = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? ''
 export const [OWNER, REPO] = (process.env.GITHUB_REPOSITORY ?? '').split('/')
 
-export function vanAuth() {
+export function hasAuth() {
   return Boolean(TOKEN && OWNER && REPO)
 }
 
 export function ensureAuth() {
-  if (!vanAuth()) {
-    throw new Error(uzenetek(projektConfig().nyelv).ghNincsAuth)
+  if (!hasAuth()) {
+    throw new Error(messages(projectConfig().nyelv).ghNoAuth)
   }
 }
 
@@ -42,21 +42,21 @@ export async function gh(method, path, body) {
   return data
 }
 
-// Lapozott listázás (issues, pulls, comments…).
+// Paginated listing (issues, pulls, comments…).
 export async function ghAll(path) {
   const sep = path.includes('?') ? '&' : '?'
-  const mind = []
-  for (let oldal = 1; ; oldal++) {
-    const adag = await gh('GET', `${path}${sep}per_page=100&page=${oldal}`)
-    if (!Array.isArray(adag)) return mind
-    mind.push(...adag)
-    if (adag.length < 100) return mind
+  const all = []
+  for (let page = 1; ; page++) {
+    const batch = await gh('GET', `${path}${sep}per_page=100&page=${page}`)
+    if (!Array.isArray(batch)) return all
+    all.push(...batch)
+    if (batch.length < 100) return all
   }
 }
 
-// A futó workflow-eseményből (vagy kézi `workflow_dispatch` inputból) kiolvasott
-// PR-szám. Egy helyen, hogy a hívók ne másolják el.
-export async function esemenyPrSzam() {
+// The PR number read from the running workflow event (or a manual
+// `workflow_dispatch` input). One place, so callers don't duplicate it.
+export async function eventPrNumber() {
   const eventPath = process.env.GITHUB_EVENT_PATH
   if (eventPath) {
     try {
@@ -64,11 +64,11 @@ export async function esemenyPrSzam() {
       if (existsSync(eventPath)) {
         const event = JSON.parse(readFileSync(eventPath, 'utf8'))
         if (event.pull_request?.number) return event.pull_request.number
-        // issue_comment esemény: csak akkor PR-komment, ha a payload jelzi.
+        // issue_comment event: only a PR comment if the payload says so.
         if (event.issue?.pull_request && event.issue?.number) return event.issue.number
       }
     } catch {
-      // néma: a `PR_NUMBER_INPUT` fallback még adhat számot
+      // silent: the `PR_NUMBER_INPUT` fallback may still yield a number
     }
   }
   const input = process.env.PR_NUMBER_INPUT?.trim()
